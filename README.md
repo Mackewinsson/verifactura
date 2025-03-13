@@ -5,7 +5,7 @@ Este proyecto es un servidor Express que permite la verificación de NIF a trav�
 ## Requisitos Previos
 Antes de ejecutar el servidor, asegúrese de tener instalado lo siguiente:
 
-- [Node.js](https://nodejs.org/) (versión 14 o superior recomendada)
+- [Node.js](https://nodejs.org/) (versión 12 lts)
 - [npm](https://www.npmjs.com/) o [yarn](https://yarnpkg.com/)
 - Certificado digital en formato `.pfx`
 
