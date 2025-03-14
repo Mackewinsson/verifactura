@@ -56,6 +56,10 @@ router.post("/verify-nif", async (req, res) => {
       }
     );
 
+    if (!response.data.startsWith("<")) {
+      throw new Error("La respuesta del servicio AEAT no es XML válido");
+    }
+
     const parsed = await parser.parseStringPromise(response.data);
     const contribuyente = parsed.Envelope.Body.VNifV2Sal.Contribuyente;
 
@@ -77,7 +81,7 @@ router.post("/verify-nif", async (req, res) => {
   } catch (error) {
     console.error("Error:", error.message);
 
-    if (error instanceof xml2js.ParseError) {
+    if (error.message.includes("XML") || error.message.includes("parse")) {
       return res.status(500).json({
         error: "XML Parsing Error",
         message: "Failed to parse AEAT response",
