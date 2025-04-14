@@ -96,4 +96,94 @@ router.post("/verify-nif", async (req, res) => {
   }
 });
 
+router.post("/send-invoice", async (req, res) => {
+  const invoice = req.body;
+
+  if (
+    !invoice ||
+    !invoice.nif ||
+    !invoice.nombre ||
+    !invoice.numSerie ||
+    !invoice.fecha ||
+    !invoice.detalles
+  ) {
+    return res.status(400).json({ error: "Missing required invoice fields" });
+  }
+
+  const xmlRequest = `
+  <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:sum="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SuministroLR.xsd"
+    xmlns:sum1="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SuministroInformacion.xsd">
+    <soapenv:Header/>
+    <soapenv:Body>
+      <sum:RegFactuSistemaFacturacion>
+        <sum:Cabecera>
+          <sum1:ObligadoEmision>
+            <sum1:NombreRazon>${invoice.nombre}</sum1:NombreRazon>
+            <sum1:NIF>${invoice.nif}</sum1:NIF>
+          </sum1:ObligadoEmision>
+        </sum:Cabecera>
+        <sum:RegistroFactura>
+          <sum1:RegistroAlta>
+            <sum1:IDVersion>1.0</sum1:IDVersion>
+            <sum1:IDFactura>
+              <sum1:IDEmisorFactura>${invoice.nif}</sum1:IDEmisorFactura>
+              <sum1:NumSerieFactura>${invoice.numSerie}</sum1:NumSerieFactura>
+              <sum1:FechaExpedicionFactura>${
+                invoice.fecha
+              }</sum1:FechaExpedicionFactura>
+            </sum1:IDFactura>
+            <sum1:NombreRazonEmisor>${invoice.nombre}</sum1:NombreRazonEmisor>
+            <sum1:TipoFactura>F1</sum1:TipoFactura>
+            <sum1:DescripcionOperacion>${
+              invoice.descripcion || "Sin descripción"
+            }</sum1:DescripcionOperacion>
+            <sum1:Destinatarios>
+              <sum1:IDDestinatario>
+                <sum1:NombreRazon>${invoice.destNombre}</sum1:NombreRazon>
+                <sum1:NIF>${invoice.destNif}</sum1:NIF>
+              </sum1:IDDestinatario>
+            </sum1:Destinatarios>
+            <sum1:Desglose>
+              ${invoice.detalles
+                .map(
+                  (item) => `
+                <sum1:DetalleDesglose>
+                  <sum1:ClaveRegimen>${item.clave}</sum1:ClaveRegimen>
+                  <sum1:CalificacionOperacion>${item.calif}</sum1:CalificacionOperacion>
+                  <sum1:TipoImpositivo>${item.tipo}</sum1:TipoImpositivo>
+                  <sum1:BaseImponibleOimporteNoSujeto>${item.base}</sum1:BaseImponibleOimporteNoSujeto>
+                  <sum1:CuotaRepercutida>${item.cuota}</sum1:CuotaRepercutida>
+                </sum1:DetalleDesglose>`
+                )
+                .join("")}
+            </sum1:Desglose>
+            <sum1:CuotaTotal>${invoice.cuotaTotal}</sum1:CuotaTotal>
+            <sum1:ImporteTotal>${invoice.total}</sum1:ImporteTotal>
+          </sum1:RegistroAlta>
+        </sum:RegistroFactura>
+      </sum:RegFactuSistemaFacturacion>
+    </soapenv:Body>
+  </soapenv:Envelope>`;
+
+  try {
+    const response = await axios.post(
+      "https://prewww1.aeat.es/FacturacionSIF/ws/AltaLRFacturas", // Replace with actual AEAT test endpoint
+      xmlRequest,
+      {
+        headers: { "Content-Type": "text/xml" },
+        httpsAgent: httpsAgent,
+      }
+    );
+
+    const parsed = await parser.parseStringPromise(response.data);
+    res.json({ success: true, aeatResponse: parsed });
+  } catch (error) {
+    console.error("AEAT Error:", error.message);
+    res
+      .status(500)
+      .json({ error: "Failed to send invoice", details: error.message });
+  }
+});
+
 module.exports = router;
