@@ -115,7 +115,7 @@ router.post("/send-invoice", async (req, res) => {
   <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
   xmlns:sum="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SuministroLR.xsd"
   xmlns:sum1="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SuministroInformacion.xsd">
-  <soapenv:Header/>
+    <soapenv:Header/>
   <soapenv:Body>
     <sum:RegFactuSistemaFacturacion>
       <sum:Cabecera>
@@ -157,18 +157,19 @@ router.post("/send-invoice", async (req, res) => {
           </sum1:Encadenamiento>
           
           <sum1:SistemaInformatico>
-            <sum1:NombreRazon>TEST</sum1:NombreRazon>
+            <sum1:NombreRazon>MACKEWINSSON PALENCIA</sum1:NombreRazon>
             <sum1:NIF>Z0706098A</sum1:NIF>
             <sum1:NombreSistemaInformatico>?ssss</sum1:NombreSistemaInformatico>
-            <sum1:IdSistemaInformatico>1</sum1:IdSistemaInformatico>
+            <sum1:IdSistemaInformatico>01</sum1:IdSistemaInformatico>
             <sum1:Version>1</sum1:Version>
-            <sum1:NumeroInstalacion>1</sum1:NumeroInstalacion>
-            <sum1:TipoUsoPosibleSoloVerifactu>1</sum1:TipoUsoPosibleSoloVerifactu>
-            <sum1:TipoUsoPosibleMultiOT>?</sum1:TipoUsoPosibleMultiOT>
-            <sum1:IndicadorMultiplesOT>?</sum1:IndicadorMultiplesOT>
+            <sum1:NumeroInstalacion>${Date.now()}</sum1:NumeroInstalacion>
+            <sum1:TipoUsoPosibleSoloVerifactu>N</sum1:TipoUsoPosibleSoloVerifactu>
+            <sum1:TipoUsoPosibleMultiOT>N</sum1:TipoUsoPosibleMultiOT>
+            <sum1:IndicadorMultiplesOT>N</sum1:IndicadorMultiplesOT>
           </sum1:SistemaInformatico>
-<sum1:FechaHoraHusoGenRegistro>${new Date().toISOString()}</sum1:FechaHoraHusoGenRegistro>          <sum1:TipoHuella>?</sum1:TipoHuella>
-          <sum1:Huella>?</sum1:Huella>
+          <sum1:FechaHoraHusoGenRegistro>${new Date().toISOString()}</sum1:FechaHoraHusoGenRegistro>          
+          <sum1:TipoHuella>SHA-256</sum1:TipoHuella>
+          <sum1:Huella>adfawedsade51a6e46a4d964ew44e</sum1:Huella>
         </sum1:RegistroAlta>
       </sum:RegistroFactura>
     </sum:RegFactuSistemaFacturacion>
