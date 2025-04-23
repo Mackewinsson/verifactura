@@ -7,6 +7,12 @@ const fs = require("fs");
 const https = require("https");
 const xml2js = require("xml2js");
 const { log } = require("console");
+const {
+  validateNIF,
+  validateInvoice,
+  validateRequest,
+} = require("../middleware/validation");
+const { AppError } = require("../middleware/errorHandler");
 
 const parser = new xml2js.Parser({
   explicitArray: false,
@@ -24,14 +30,14 @@ const httpsAgent = new https.Agent({
   rejectUnauthorized: false,
 });
 
-router.post("/verify-nif", async (req, res) => {
-  const { nif, nombre } = req.body;
+router.post(
+  "/verify-nif",
+  validateNIF,
+  validateRequest,
+  async (req, res, next) => {
+    const { nif, nombre } = req.body;
 
-  if (!nif || !nombre) {
-    return res.status(400).json({ error: "NIF and Nombre are required" });
-  }
-
-  const xmlRequest = `
+    const xmlRequest = `
   <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
     xmlns:vnif="http://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/burt/jdit/ws/VNifV2Ent.xsd">
     <soapenv:Header/>
@@ -45,234 +51,266 @@ router.post("/verify-nif", async (req, res) => {
     </soapenv:Body>
   </soapenv:Envelope>`;
 
-  try {
-    const response = await axios.post(
-      "https://www1.agenciatributaria.gob.es/wlpl/BURT-JDIT/ws/VNifV2SOAP",
-      xmlRequest,
-      {
-        headers: {
-          "Content-Type": "text/xml; charset=utf-8",
-          SOAPAction: "",
-        },
-        httpsAgent: httpsAgent,
-      }
-    );
-
-    if (!response.data.startsWith("<")) {
-      throw new Error("La respuesta del servicio AEAT no es XML válido");
-    }
-
-    const parsed = await parser.parseStringPromise(response.data);
-    const contribuyente = parsed.Envelope.Body.VNifV2Sal.Contribuyente;
-
-    if (contribuyente.Resultado === "IDENTIFICADO") {
-      res.status(200).json({
-        success: true,
-        nif: contribuyente.Nif,
-        nombre: contribuyente.Nombre.trim(),
-        resultado: contribuyente.Resultado,
-      });
-    } else {
-      res.status(404).json({
-        success: false,
-        error: "Validation failed",
-        resultado: contribuyente.Resultado,
-        message: "NIF and name combination not recognized by AEAT",
-      });
-    }
-  } catch (error) {
-    console.error("Error:", error.message);
-
-    if (error.message.includes("XML") || error.message.includes("parse")) {
-      return res.status(500).json({
-        error: "XML Parsing Error",
-        message: "Failed to parse AEAT response",
-      });
-    }
-
-    const statusCode = error.response.status || 500;
-    res.status(statusCode).json({
-      error: error.response ? "AEAT Service Error" : "Internal Server Error",
-      details: error.response ? error.response.data : error.message,
-    });
-  }
-});
-
-router.post("/send-invoice", async (req, res) => {
-  const invoice = req.body;
-
-  if (
-    !invoice ||
-    !invoice.nif ||
-    !invoice.nombre ||
-    !invoice.numSerie ||
-    !invoice.fecha ||
-    !invoice.detalles
-  ) {
-    return res.status(400).json({ error: "Missing required invoice fields" });
-  }
-
-  function generarHuellaDesdeFactura(factura) {
-    const now = new Date();
-    const timestamp = `${now.getFullYear()}-${String(
-      now.getMonth() + 1
-    ).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}T${String(
-      now.getHours()
-    ).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(
-      now.getSeconds()
-    ).padStart(2, "0")}+01:00`;
-    const valores = [
-      `IDEmisorFactura=${factura.nif ? factura.nif.trim() : ""}`,
-      `NumSerieFactura=${factura.numSerie ? factura.numSerie.trim() : ""}`,
-      `FechaExpedicionFactura=${
-        factura.fecha
-          ? new Date(factura.fecha)
-              .toLocaleDateString("es-ES", {
-                year: "numeric",
-                month: "2-digit",
-                day: "2-digit",
-              })
-              .split("/")
-              .join("-")
-          : ""
-      }`,
-      `TipoFactura=${factura.tipoFactura ? factura.tipoFactura.trim() : "F1"}`,
-      `CuotaTotal=${Number(factura.cuotaTotal).toFixed(2)}`,
-      `ImporteTotal=${Number(factura.total).toFixed(2)}`,
-      `Huella=${factura.huellaAnterior ? factura.huellaAnterior.trim() : ""}`,
-      `FechaHoraHusoGenRegistro=${timestamp}`,
-    ];
-    const datosCanonicos = valores.join("&");
-
-    console.log("📦 Cadena para hash:", datosCanonicos);
-
-    const hash = crypto
-      .createHash("sha256")
-      .update(datosCanonicos, "utf8")
-      .digest("hex")
-      .toUpperCase();
-
-    console.log("🔐 Huella generada:", hash);
-    console.log("📏 Longitud de la huella:", hash.length);
-
-    if (hash.length !== 64) {
-      throw new Error(
-        "La huella generada no tiene la longitud de 64 caracteres requerida."
+    try {
+      const response = await axios.post(
+        "https://www1.agenciatributaria.gob.es/wlpl/BURT-JDIT/ws/VNifV2SOAP",
+        xmlRequest,
+        {
+          headers: {
+            "Content-Type": "text/xml; charset=utf-8",
+            SOAPAction: "",
+          },
+          httpsAgent: httpsAgent,
+        }
       );
+
+      if (!response.data.startsWith("<")) {
+        throw new AppError(
+          "La respuesta del servicio AEAT no es XML válido",
+          500,
+          null,
+          "XMLParseError"
+        );
+      }
+
+      const parsed = await parser.parseStringPromise(response.data);
+      const contribuyente = parsed.Envelope.Body.VNifV2Sal.Contribuyente;
+
+      if (contribuyente.Resultado === "IDENTIFICADO") {
+        res.status(200).json({
+          success: true,
+          nif: contribuyente.Nif,
+          nombre: contribuyente.Nombre.trim(),
+          resultado: contribuyente.Resultado,
+        });
+      } else {
+        res.status(404).json({
+          success: false,
+          error: "Validation failed",
+          resultado: contribuyente.Resultado,
+          message: "NIF and name combination not recognized by AEAT",
+        });
+      }
+    } catch (error) {
+      if (error instanceof AppError) {
+        next(error);
+      } else if (
+        error.message.includes("XML") ||
+        error.message.includes("parse")
+      ) {
+        next(
+          new AppError(
+            "Failed to parse AEAT response",
+            500,
+            error.message,
+            "XMLParseError"
+          )
+        );
+      } else {
+        next(
+          new AppError(
+            "AEAT Service Error",
+            502,
+            (error.response && error.response.data) || error.message,
+            "AEATServiceError"
+          )
+        );
+      }
+    }
+  }
+);
+
+router.post(
+  "/send-invoice",
+  validateInvoice,
+  validateRequest,
+  async (req, res, next) => {
+    const invoice = req.body;
+
+    function generarHuellaDesdeFactura(factura) {
+      const now = new Date();
+      const timestamp = `${now.getFullYear()}-${String(
+        now.getMonth() + 1
+      ).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}T${String(
+        now.getHours()
+      ).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(
+        now.getSeconds()
+      ).padStart(2, "0")}+01:00`;
+      const valores = [
+        `IDEmisorFactura=${factura.nif ? factura.nif.trim() : ""}`,
+        `NumSerieFactura=${factura.numSerie ? factura.numSerie.trim() : ""}`,
+        `FechaExpedicionFactura=${
+          factura.fecha
+            ? new Date(factura.fecha)
+                .toLocaleDateString("es-ES", {
+                  year: "numeric",
+                  month: "2-digit",
+                  day: "2-digit",
+                })
+                .split("/")
+                .join("-")
+            : ""
+        }`,
+        `TipoFactura=${
+          factura.tipoFactura ? factura.tipoFactura.trim() : "F1"
+        }`,
+        `CuotaTotal=${Number(factura.cuotaTotal).toFixed(2)}`,
+        `ImporteTotal=${Number(factura.total).toFixed(2)}`,
+        `Huella=${factura.huellaAnterior ? factura.huellaAnterior.trim() : ""}`,
+        `FechaHoraHusoGenRegistro=${timestamp}`,
+      ];
+      const datosCanonicos = valores.join("&");
+
+      console.log("📦 Cadena para hash:", datosCanonicos);
+
+      const hash = crypto
+        .createHash("sha256")
+        .update(datosCanonicos, "utf8")
+        .digest("hex")
+        .toUpperCase();
+
+      console.log("🔐 Huella generada:", hash);
+      console.log("📏 Longitud de la huella:", hash.length);
+
+      if (hash.length !== 64) {
+        throw new Error(
+          "La huella generada no tiene la longitud de 64 caracteres requerida."
+        );
+      }
+
+      return { huella: hash, tipo: "SHA-256", fechaHora: timestamp };
     }
 
-    return { huella: hash, tipo: "SHA-256", fechaHora: timestamp };
-  }
+    try {
+      const { huella, tipo, fechaHora } = generarHuellaDesdeFactura(invoice);
+      const fechaExpedicion = invoice.fecha
+        ? invoice.fecha.trim().slice(0, 10)
+        : "";
 
-  const { huella, tipo, fechaHora } = generarHuellaDesdeFactura(invoice);
-  const fechaExpedicion = invoice.fecha
-    ? invoice.fecha.trim().slice(0, 10)
-    : "";
+      console.log("🧾 TipoHuella enviado:", tipo);
+      console.log("🧾 Huella enviada:", huella, "Longitud:", huella.length);
 
-  console.log("🧾 TipoHuella enviado:", tipo);
-  console.log("🧾 Huella enviada:", huella, "Longitud:", huella.length);
+      const xmlRequest = `
+    <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+      xmlns:sum="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SuministroLR.xsd"
+      xmlns:sum1="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SuministroInformacion.xsd">
+      <soapenv:Header/>
+      <soapenv:Body>
+        <sum:RegFactuSistemaFacturacion>
+          <sum:Cabecera>
+            <sum1:ObligadoEmision>
+              <sum1:NombreRazon>${invoice.nombre}</sum1:NombreRazon>
+              <sum1:NIF>${invoice.nif}</sum1:NIF>
+            </sum1:ObligadoEmision>
+          </sum:Cabecera>
+          <sum:RegistroFactura>
+            <sum1:RegistroAlta>
+              <sum1:IDVersion>1.0</sum1:IDVersion>
+              <sum1:IDFactura>
+                <sum1:IDEmisorFactura>${invoice.nif}</sum1:IDEmisorFactura>
+                <sum1:NumSerieFactura>${invoice.numSerie}</sum1:NumSerieFactura>
+                <sum1:FechaExpedicionFactura>${fechaExpedicion}</sum1:FechaExpedicionFactura>
+              </sum1:IDFactura>
+              <sum1:NombreRazonEmisor>${invoice.nombre}</sum1:NombreRazonEmisor>
+              <sum1:TipoFactura>${
+                invoice.tipoFactura || "F1"
+              }</sum1:TipoFactura>
+              <sum1:DescripcionOperacion>${
+                invoice.descripcion || "Operación genérica"
+              }</sum1:DescripcionOperacion>
+              <sum1:Destinatarios>
+                <sum1:IDDestinatario>
+                  <sum1:NombreRazon>${
+                    invoice.destNombre || invoice.nombre
+                  }</sum1:NombreRazon>
+                  <sum1:NIF>${invoice.destNif || invoice.nif}</sum1:NIF>
+                </sum1:IDDestinatario>
+              </sum1:Destinatarios>
+              <sum1:Desglose>
+                ${invoice.detalles
+                  .map(
+                    (d) => `
+                  <sum1:DetalleDesglose>
+                    <sum1:ClaveRegimen>${d.clave}</sum1:ClaveRegimen>
+                    <sum1:CalificacionOperacion>${d.calif}</sum1:CalificacionOperacion>
+                    <sum1:TipoImpositivo>${d.tipo}</sum1:TipoImpositivo>
+                    <sum1:BaseImponibleOimporteNoSujeto>${d.base}</sum1:BaseImponibleOimporteNoSujeto>
+                    <sum1:CuotaRepercutida>${d.cuota}</sum1:CuotaRepercutida>
+                  </sum1:DetalleDesglose>`
+                  )
+                  .join("")}
+              </sum1:Desglose>
+              <sum1:CuotaTotal>${invoice.cuotaTotal}</sum1:CuotaTotal>
+              <sum1:ImporteTotal>${invoice.total}</sum1:ImporteTotal>
+              <sum1:Encadenamiento>
+                <sum1:PrimerRegistro>${
+                  invoice.primerRegistro || "S"
+                }</sum1:PrimerRegistro>
+              </sum1:Encadenamiento>
+              <sum1:SistemaInformatico>
+                <sum1:NombreRazon>${invoice.nombre}</sum1:NombreRazon>
+                <sum1:NIF>${invoice.nif}</sum1:NIF>
+                <sum1:NombreSistemaInformatico>${
+                  invoice.nombreSistema || "MiSistemaVerifactu"
+                }</sum1:NombreSistemaInformatico>
+                <sum1:IdSistemaInformatico>01</sum1:IdSistemaInformatico>
+                <sum1:Version>1</sum1:Version>
+                <sum1:NumeroInstalacion>${Date.now()}</sum1:NumeroInstalacion>
+                <sum1:TipoUsoPosibleSoloVerifactu>N</sum1:TipoUsoPosibleSoloVerifactu>
+                <sum1:TipoUsoPosibleMultiOT>N</sum1:TipoUsoPosibleMultiOT>
+                <sum1:IndicadorMultiplesOT>N</sum1:IndicadorMultiplesOT>
+              </sum1:SistemaInformatico>
+              <sum1:FechaHoraHusoGenRegistro>${fechaHora}</sum1:FechaHoraHusoGenRegistro>
+              <sum1:TipoHuella>01</sum1:TipoHuella>
+              <sum1:Huella>${huella}</sum1:Huella>
+            </sum1:RegistroAlta>
+          </sum:RegistroFactura>
+        </sum:RegFactuSistemaFacturacion>
+      </soapenv:Body>
+    </soapenv:Envelope>
+    `;
+      console.log("📦 XML Request:", xmlRequest);
 
-  const xmlRequest = `
-<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
-  xmlns:sum="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SuministroLR.xsd"
-  xmlns:sum1="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SuministroInformacion.xsd">
-  <soapenv:Header/>
-  <soapenv:Body>
-    <sum:RegFactuSistemaFacturacion>
-      <sum:Cabecera>
-        <sum1:ObligadoEmision>
-          <sum1:NombreRazon>${invoice.nombre}</sum1:NombreRazon>
-          <sum1:NIF>${invoice.nif}</sum1:NIF>
-        </sum1:ObligadoEmision>
-      </sum:Cabecera>
-      <sum:RegistroFactura>
-        <sum1:RegistroAlta>
-          <sum1:IDVersion>1.0</sum1:IDVersion>
-          <sum1:IDFactura>
-            <sum1:IDEmisorFactura>${invoice.nif}</sum1:IDEmisorFactura>
-            <sum1:NumSerieFactura>${invoice.numSerie}</sum1:NumSerieFactura>
-            <sum1:FechaExpedicionFactura>${fechaExpedicion}</sum1:FechaExpedicionFactura>
-          </sum1:IDFactura>
-          <sum1:NombreRazonEmisor>${invoice.nombre}</sum1:NombreRazonEmisor>
-          <sum1:TipoFactura>${invoice.tipoFactura || "F1"}</sum1:TipoFactura>
-          <sum1:DescripcionOperacion>${
-            invoice.descripcion || "Operación genérica"
-          }</sum1:DescripcionOperacion>
-          <sum1:Destinatarios>
-            <sum1:IDDestinatario>
-              <sum1:NombreRazon>${
-                invoice.destNombre || invoice.nombre
-              }</sum1:NombreRazon>
-              <sum1:NIF>${invoice.destNif || invoice.nif}</sum1:NIF>
-            </sum1:IDDestinatario>
-          </sum1:Destinatarios>
-          <sum1:Desglose>
-            ${invoice.detalles
-              .map(
-                (d) => `
-              <sum1:DetalleDesglose>
-                <sum1:ClaveRegimen>${d.clave}</sum1:ClaveRegimen>
-                <sum1:CalificacionOperacion>${d.calif}</sum1:CalificacionOperacion>
-                <sum1:TipoImpositivo>${d.tipo}</sum1:TipoImpositivo>
-                <sum1:BaseImponibleOimporteNoSujeto>${d.base}</sum1:BaseImponibleOimporteNoSujeto>
-                <sum1:CuotaRepercutida>${d.cuota}</sum1:CuotaRepercutida>
-              </sum1:DetalleDesglose>`
-              )
-              .join("")}
-          </sum1:Desglose>
-          <sum1:CuotaTotal>${invoice.cuotaTotal}</sum1:CuotaTotal>
-          <sum1:ImporteTotal>${invoice.total}</sum1:ImporteTotal>
-          <sum1:Encadenamiento>
-            <sum1:PrimerRegistro>${
-              invoice.primerRegistro || "S"
-            }</sum1:PrimerRegistro>
-          </sum1:Encadenamiento>
-          <sum1:SistemaInformatico>
-            <sum1:NombreRazon>${invoice.nombre}</sum1:NombreRazon>
-            <sum1:NIF>${invoice.nif}</sum1:NIF>
-            <sum1:NombreSistemaInformatico>${
-              invoice.nombreSistema || "MiSistemaVerifactu"
-            }</sum1:NombreSistemaInformatico>
-            <sum1:IdSistemaInformatico>01</sum1:IdSistemaInformatico>
-            <sum1:Version>1</sum1:Version>
-            <sum1:NumeroInstalacion>${Date.now()}</sum1:NumeroInstalacion>
-            <sum1:TipoUsoPosibleSoloVerifactu>N</sum1:TipoUsoPosibleSoloVerifactu>
-            <sum1:TipoUsoPosibleMultiOT>N</sum1:TipoUsoPosibleMultiOT>
-            <sum1:IndicadorMultiplesOT>N</sum1:IndicadorMultiplesOT>
-          </sum1:SistemaInformatico>
-          <sum1:FechaHoraHusoGenRegistro>${fechaHora}</sum1:FechaHoraHusoGenRegistro>
-          <sum1:TipoHuella>01</sum1:TipoHuella>
-          <sum1:Huella>${huella}</sum1:Huella>
-        </sum1:RegistroAlta>
-      </sum:RegistroFactura>
-    </sum:RegFactuSistemaFacturacion>
-  </soapenv:Body>
-</soapenv:Envelope>
-  `;
-  console.log("📦 XML Request:", xmlRequest);
+      const response = await axios.post(
+        "https://prewww1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP",
+        xmlRequest,
+        {
+          headers: {
+            "Content-Type": "text/xml",
+          },
+          httpsAgent: httpsAgent,
+        }
+      );
 
-  try {
-    const response = await axios.post(
-      "https://prewww1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP",
-      xmlRequest,
-      {
-        headers: {
-          "Content-Type": "text/xml",
-        },
-        httpsAgent: httpsAgent,
+      const parsed = await parser.parseStringPromise(response.data);
+      res.json({ success: true, aeatResponse: parsed });
+    } catch (error) {
+      if (error instanceof AppError) {
+        next(error);
+      } else if (
+        error.message.includes("XML") ||
+        error.message.includes("parse")
+      ) {
+        next(
+          new AppError(
+            "Failed to parse AEAT response",
+            500,
+            error.message,
+            "XMLParseError"
+          )
+        );
+      } else {
+        next(
+          new AppError(
+            "AEAT Service Error",
+            502,
+            (error.response && error.response.data) || error.message,
+            "AEATServiceError"
+          )
+        );
       }
-    );
-
-    const parsed = await parser.parseStringPromise(response.data);
-    res.json({ success: true, aeatResponse: parsed });
-  } catch (error) {
-    console.error("AEAT Error:", error.message);
-    console.log(error);
-
-    res
-      .status(500)
-      .json({ error: "Failed to send invoice", details: error.message });
+    }
   }
-});
+);
 
 module.exports = router;

@@ -72,6 +72,7 @@ npm run dev
   }
   ```
 - **Respuesta exitosa (200 OK):**
+
   ```json
   {
     "success": true,
@@ -80,6 +81,9 @@ npm run dev
     "resultado": "IDENTIFICADO"
   }
   ```
+
+  > Nota: El campo `nombre` en la respuesta siempre viene con espacios en blanco eliminados (trimmed).
+
 - **Error en validación (404 Not Found):**
   ```json
   {
@@ -89,37 +93,113 @@ npm run dev
     "message": "NIF and name combination not recognized by AEAT"
   }
   ```
+- **Error en la solicitud (400 Bad Request):**
+  ```json
+  {
+    "error": "NIF and Nombre are required"
+  }
+  ```
+- **Error en el servidor (500 Internal Server Error):**
+  ```json
+  {
+    "error": "XML Parsing Error",
+    "message": "Failed to parse AEAT response"
+  }
+  ```
+  o
+  ```json
+  {
+    "error": "AEAT Service Error",
+    "details": "Error details from AEAT service"
+  }
+  ```
 
 ### Endpoint: Envío de Factura
 
 - **Método:** `POST`
 - **Ruta:** `/send-invoice`
 - **Cuerpo de la solicitud (JSON):**
+
   ```json
   {
-    "invoiceNumber": "INV-2025-001",
-    "date": "2025-04-10",
-    "customerNIF": "12345678A",
-    "customerName": "JUAN PEREZ",
-    "amount": 1500.0,
-    "currency": "EUR",
-    "description": "Servicios profesionales"
+    "nif": "Z0706098A",
+    "nombre": "MACKEWINSSON PALENCIA",
+    "numSerie": "PRUEBA-0002",
+    "fecha": "18-04-2025",
+    "tipoFactura": "F1",
+    "descripcion": "Venta de servicios tecnológicos",
+    "destNombre": "CLIENTE SL",
+    "destNif": "Z0706098A",
+    "cuotaTotal": 21.4,
+    "total": 131.4,
+    "primerRegistro": "S",
+    "nombreSistema": "VeriFacturaLite",
+    "huellaAnterior": "",
+    "detalles": [
+      {
+        "clave": "01",
+        "calif": "S1",
+        "tipo": 4,
+        "base": 10,
+        "cuota": 0.4
+      },
+      {
+        "clave": "01",
+        "calif": "S1",
+        "tipo": 21,
+        "base": 100,
+        "cuota": 21
+      }
+    ]
   }
   ```
+
+  **Campos requeridos:**
+
+  - `nif`: NIF del emisor
+  - `nombre`: Nombre o razón social del emisor
+  - `numSerie`: Número de serie de la factura
+  - `fecha`: Fecha de expedición (formato DD-MM-YYYY)
+  - `detalles`: Array de detalles de la factura
+
+  **Campos opcionales:**
+
+  - `tipoFactura`: Tipo de factura (por defecto: "F1")
+  - `descripcion`: Descripción de la operación
+  - `destNombre`: Nombre del destinatario (por defecto: igual que emisor)
+  - `destNif`: NIF del destinatario (por defecto: igual que emisor)
+  - `primerRegistro`: Indica si es el primer registro (por defecto: "S")
+  - `nombreSistema`: Nombre del sistema informático (por defecto: "MiSistemaVerifactu")
+  - `huellaAnterior`: Huella de la factura anterior (para encadenamiento)
+
+  **Estructura de detalles:**
+
+  - `clave`: Clave del régimen
+  - `calif`: Calificación de la operación
+  - `tipo`: Tipo impositivo (porcentaje)
+  - `base`: Base imponible
+  - `cuota`: Cuota repercutida
+
 - **Respuesta exitosa (200 OK):**
   ```json
   {
     "success": true,
-    "message": "Factura enviada correctamente",
-    "invoiceId": "aeat-789456123"
+    "aeatResponse": {
+      // Respuesta detallada de la AEAT
+    }
   }
   ```
-- **Error en el envío (400 Bad Request o 500 Internal Server Error):**
+- **Error en el envío (400 Bad Request):**
   ```json
   {
-    "success": false,
-    "error": "Invoice submission failed",
-    "message": "El servidor de AEAT no pudo procesar la factura"
+    "error": "Missing required invoice fields"
+  }
+  ```
+- **Error en el servidor (500 Internal Server Error):**
+  ```json
+  {
+    "error": "Failed to send invoice",
+    "details": "Error message from AEAT service"
   }
   ```
 
