@@ -58,6 +58,40 @@ O bien, si está utilizando `nodemon` para desarrollo:
 npm run dev
 ```
 
+## Ejecución en Producción con PM2
+
+Use [PM2](https://pm2.keymetrics.io/) para mantener el servidor activo como demonio y reiniciarlo automáticamente al cerrar sesión o reiniciar el sistema.
+
+1. Instale PM2 (global o vía `npx`):
+   ```sh
+   npm install -g pm2
+   # o
+   npx pm2 --version
+   ```
+2. Desde la raíz del proyecto, inicie la app usando el archivo `ecosystem.config.js`, que ya carga el `.env`:
+   ```sh
+   pm2 start ecosystem.config.js --env production
+   ```
+3. Compruebe que el proceso está en ejecución:
+   ```sh
+   pm2 status verifactura
+   ```
+4. Guarde la configuración para que PM2 restaure el proceso tras un reinicio:
+   ```sh
+   pm2 save
+   ```
+5. Configure el arranque automático del servicio (el comando concreto depende del sistema operativo):
+   ```sh
+   # macOS (launchctl)
+   pm2 startup launchd
+
+   # Linux con systemd (distros modernas)
+   sudo pm2 startup systemd -u $USER --hp $HOME
+   ```
+   Ejecute el comando que PM2 imprime para registrar el servicio. Después de reiniciar, PM2 restaurará los procesos guardados con `pm2 resurrect`.
+
+Para reiniciar manualmente el servidor ejecutado por PM2 use `pm2 restart verifactura`, y para detenerlo `pm2 stop verifactura`.
+
 ## Uso de la API
 
 ### Endpoint: Verificación de NIF
