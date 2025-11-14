@@ -81,14 +81,43 @@ Use [PM2](https://pm2.keymetrics.io/) para mantener el servidor activo como demo
    pm2 save
    ```
 5. Configure el arranque automático del servicio (el comando concreto depende del sistema operativo):
-   ```sh
-   # macOS (launchctl)
-   pm2 startup launchd
 
-   # Linux con systemd (distros modernas)
+   **Windows:**
+   
+   En Windows, el comando `pm2 startup` puede mostrar el error "Init system not found". Para solucionarlo, use el paquete `pm2-windows-startup`:
+   
+   ```sh
+   # Instale el paquete adicional para Windows
+   npm install -g pm2-windows-startup
+   
+   # Configure el arranque automático
+   pm2-startup install
+   ```
+   
+   Si `pm2-windows-startup` no está disponible, puede configurar manualmente el Programador de tareas de Windows:
+   1. Abra el Programador de tareas (Task Scheduler)
+   2. Cree una nueva tarea básica
+   3. Configure:
+      - Nombre: `PM2 Auto Start`
+      - Trigger: "Al iniciar sesión" o "Al iniciar el equipo"
+      - Acción: Iniciar un programa
+      - Programa: `pm2`
+      - Argumentos: `resurrect`
+      - Directorio de inicio: La ruta donde está instalado Node.js (ej: `C:\Users\Administrador\AppData\Local\nvm\v22.21.0`)
+
+   **macOS (launchctl):**
+   ```sh
+   pm2 startup launchd
+   ```
+   Ejecute el comando que PM2 imprime para registrar el servicio.
+
+   **Linux con systemd (distros modernas):**
+   ```sh
    sudo pm2 startup systemd -u $USER --hp $HOME
    ```
-   Ejecute el comando que PM2 imprime para registrar el servicio. Después de reiniciar, PM2 restaurará los procesos guardados con `pm2 resurrect`.
+   Ejecute el comando que PM2 imprime para registrar el servicio.
+
+   Después de reiniciar el sistema, PM2 restaurará automáticamente los procesos guardados con `pm2 resurrect`.
 
 Para reiniciar manualmente el servidor ejecutado por PM2 use `pm2 restart verifactura`, y para detenerlo `pm2 stop verifactura`.
 
