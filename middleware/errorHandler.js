@@ -9,7 +9,11 @@ class AppError extends Error {
 }
 
 const errorHandler = (err, req, res, next) => {
-  console.error("Error:", err);
+  // Only log actual errors (not 404s which are expected)
+  const statusCode = err.status || err.statusCode || 500;
+  if (statusCode >= 500) {
+    console.error("Error:", err);
+  }
 
   // Default error response
   const response = {
@@ -40,6 +44,15 @@ const errorHandler = (err, req, res, next) => {
       success: false,
       error: "XML Parsing Error",
       details: err.details,
+    });
+  }
+
+  // Handle http-errors (like 404 from createError)
+  if (err.status) {
+    return res.status(err.status).json({
+      success: false,
+      error: err.message || "Not Found",
+      ...(err.details && { details: err.details }),
     });
   }
 

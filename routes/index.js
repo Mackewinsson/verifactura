@@ -37,6 +37,17 @@ router.post(
   async (req, res, next) => {
     const { nif, nombre } = req.body;
 
+    // Normalize NIF to uppercase and escape XML special characters
+    const normalizedNif = nif.trim().toUpperCase();
+    const escapeXml = (str) => {
+      return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&apos;");
+    };
+
     const xmlRequest = `
   <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
     xmlns:vnif="http://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/burt/jdit/ws/VNifV2Ent.xsd">
@@ -44,8 +55,8 @@ router.post(
     <soapenv:Body>
       <vnif:VNifV2Ent>
         <vnif:Contribuyente>
-          <vnif:Nif>${nif}</vnif:Nif>
-          <vnif:Nombre>${nombre}</vnif:Nombre>
+          <vnif:Nif>${escapeXml(normalizedNif)}</vnif:Nif>
+          <vnif:Nombre>${escapeXml(nombre.trim())}</vnif:Nombre>
         </vnif:Contribuyente>
       </vnif:VNifV2Ent>
     </soapenv:Body>
@@ -127,6 +138,20 @@ router.post(
   async (req, res, next) => {
     const invoice = req.body;
 
+    // Normalize NIFs to uppercase and escape XML special characters
+    const escapeXml = (str) => {
+      if (!str) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&apos;");
+    };
+    const normalizeNif = (nif) => (nif ? nif.trim().toUpperCase() : "");
+    const normalizedNif = normalizeNif(invoice.nif);
+    const normalizedDestNif = normalizeNif(invoice.destNif || invoice.nif);
+
     function generarHuellaDesdeFactura(factura) {
       const now = new Date();
       const timestamp = `${now.getFullYear()}-${String(
@@ -137,7 +162,7 @@ router.post(
         now.getSeconds()
       ).padStart(2, "0")}+01:00`;
       const valores = [
-        `IDEmisorFactura=${factura.nif ? factura.nif.trim() : ""}`,
+        `IDEmisorFactura=${factura.nif ? factura.nif.trim().toUpperCase() : ""}`,
         `NumSerieFactura=${factura.numSerie ? factura.numSerie.trim() : ""}`,
         `FechaExpedicionFactura=${
           factura.fecha
@@ -199,31 +224,31 @@ router.post(
         <sum:RegFactuSistemaFacturacion>
           <sum:Cabecera>
             <sum1:ObligadoEmision>
-              <sum1:NombreRazon>${invoice.nombre}</sum1:NombreRazon>
-              <sum1:NIF>${invoice.nif}</sum1:NIF>
+              <sum1:NombreRazon>${escapeXml(invoice.nombre.trim())}</sum1:NombreRazon>
+              <sum1:NIF>${escapeXml(normalizedNif)}</sum1:NIF>
             </sum1:ObligadoEmision>
           </sum:Cabecera>
           <sum:RegistroFactura>
             <sum1:RegistroAlta>
               <sum1:IDVersion>1.0</sum1:IDVersion>
               <sum1:IDFactura>
-                <sum1:IDEmisorFactura>${invoice.nif}</sum1:IDEmisorFactura>
-                <sum1:NumSerieFactura>${invoice.numSerie}</sum1:NumSerieFactura>
+                <sum1:IDEmisorFactura>${escapeXml(normalizedNif)}</sum1:IDEmisorFactura>
+                <sum1:NumSerieFactura>${escapeXml(invoice.numSerie.trim())}</sum1:NumSerieFactura>
                 <sum1:FechaExpedicionFactura>${fechaExpedicion}</sum1:FechaExpedicionFactura>
               </sum1:IDFactura>
-              <sum1:NombreRazonEmisor>${invoice.nombre}</sum1:NombreRazonEmisor>
+              <sum1:NombreRazonEmisor>${escapeXml(invoice.nombre.trim())}</sum1:NombreRazonEmisor>
               <sum1:TipoFactura>${
                 invoice.tipoFactura || "F1"
               }</sum1:TipoFactura>
-              <sum1:DescripcionOperacion>${
-                invoice.descripcion || "Operación genérica"
-              }</sum1:DescripcionOperacion>
+              <sum1:DescripcionOperacion>${escapeXml(
+                (invoice.descripcion || "Operación genérica").trim()
+              )}</sum1:DescripcionOperacion>
               <sum1:Destinatarios>
                 <sum1:IDDestinatario>
-                  <sum1:NombreRazon>${
-                    invoice.destNombre || invoice.nombre
-                  }</sum1:NombreRazon>
-                  <sum1:NIF>${invoice.destNif || invoice.nif}</sum1:NIF>
+                  <sum1:NombreRazon>${escapeXml(
+                    (invoice.destNombre || invoice.nombre).trim()
+                  )}</sum1:NombreRazon>
+                  <sum1:NIF>${escapeXml(normalizedDestNif)}</sum1:NIF>
                 </sum1:IDDestinatario>
               </sum1:Destinatarios>
               <sum1:Desglose>
@@ -248,11 +273,11 @@ router.post(
                 }</sum1:PrimerRegistro>
               </sum1:Encadenamiento>
               <sum1:SistemaInformatico>
-                <sum1:NombreRazon>${invoice.nombre}</sum1:NombreRazon>
-                <sum1:NIF>${invoice.nif}</sum1:NIF>
-                <sum1:NombreSistemaInformatico>${
-                  invoice.nombreSistema || "MiSistemaVerifactu"
-                }</sum1:NombreSistemaInformatico>
+                <sum1:NombreRazon>${escapeXml(invoice.nombre.trim())}</sum1:NombreRazon>
+                <sum1:NIF>${escapeXml(normalizedNif)}</sum1:NIF>
+                <sum1:NombreSistemaInformatico>${escapeXml(
+                  (invoice.nombreSistema || "MiSistemaVerifactu").trim()
+                )}</sum1:NombreSistemaInformatico>
                 <sum1:IdSistemaInformatico>01</sum1:IdSistemaInformatico>
                 <sum1:Version>1</sum1:Version>
                 <sum1:NumeroInstalacion>${Date.now()}</sum1:NumeroInstalacion>

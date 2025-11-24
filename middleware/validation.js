@@ -5,7 +5,7 @@ const validateNIF = [
     .not()
     .isEmpty()
     .withMessage("NIF is required")
-    .matches(/^[0-9]{8}[A-Z]$|^[A-Z][0-9]{7}[A-Z]$/)
+    .matches(/^[0-9]{8}[A-Za-z]$|^[A-Za-z][0-9]{7}[A-Za-z]$|^[A-Za-z][0-9]{7,8}[0-9A-Za-z]?$/)
     .withMessage("Invalid NIF format"),
   body("nombre")
     .not()
@@ -21,7 +21,7 @@ const validateInvoice = [
     .not()
     .isEmpty()
     .withMessage("NIF is required")
-    .matches(/^[0-9]{8}[A-Z]$|^[A-Z][0-9]{7}[A-Z]$/)
+    .matches(/^[0-9]{8}[A-Za-z]$|^[A-Za-z][0-9]{7}[A-Za-z]$|^[A-Za-z][0-9]{7,8}[0-9A-Za-z]?$/)
     .withMessage("Invalid NIF format"),
   body("nombre")
     .not()
