@@ -5,6 +5,7 @@ const validateNIF = [
     .not()
     .isEmpty()
     .withMessage("NIF is required")
+    .trim()
     .matches(/^[0-9]{8}[A-Za-z]$|^[A-Za-z][0-9]{7}[A-Za-z]$|^[A-Za-z][0-9]{7,8}[0-9A-Za-z]?$/)
     .withMessage("Invalid NIF format"),
   body("nombre")
@@ -21,6 +22,7 @@ const validateInvoice = [
     .not()
     .isEmpty()
     .withMessage("NIF is required")
+    .trim()
     .matches(/^[0-9]{8}[A-Za-z]$|^[A-Za-z][0-9]{7}[A-Za-z]$|^[A-Za-z][0-9]{7,8}[0-9A-Za-z]?$/)
     .withMessage("Invalid NIF format"),
   body("nombre")
@@ -77,6 +79,39 @@ const validateInvoice = [
   body("total")
     .isFloat({ min: 0 })
     .withMessage("total must be a positive number"),
+  body("encadenamiento.registroAnterior.idEmisorFactura")
+    .not()
+    .isEmpty()
+    .withMessage("Encadenamiento.RegistroAnterior.idEmisorFactura is required")
+    .trim()
+    .matches(/^[0-9]{8}[A-Za-z]$|^[A-Za-z][0-9]{7}[A-Za-z]$|^[A-Za-z][0-9]{7,8}[0-9A-Za-z]?$/)
+    .withMessage("Invalid Encadenamiento.RegistroAnterior.idEmisorFactura format"),
+  body("encadenamiento.registroAnterior.numSerieFactura")
+    .not()
+    .isEmpty()
+    .withMessage("Encadenamiento.RegistroAnterior.numSerieFactura is required")
+    .trim()
+    .isLength({ min: 1, max: 60 })
+    .withMessage(
+      "Encadenamiento.RegistroAnterior.numSerieFactura must be between 1 and 60 characters"
+    ),
+  body("encadenamiento.registroAnterior.fechaExpedicionFactura")
+    .not()
+    .isEmpty()
+    .withMessage(
+      "Encadenamiento.RegistroAnterior.fechaExpedicionFactura is required"
+    )
+    .matches(/^\d{2}-\d{2}-\d{4}$/)
+    .withMessage(
+      "Encadenamiento.RegistroAnterior.fechaExpedicionFactura must be in DD-MM-YYYY format"
+    ),
+  body("encadenamiento.registroAnterior.huella")
+    .not()
+    .isEmpty()
+    .withMessage("Encadenamiento.RegistroAnterior.huella is required")
+    .trim()
+    .isLength({ min: 10 })
+    .withMessage("Encadenamiento.RegistroAnterior.huella must be provided"),
 ];
 
 const validateRequest = (req, res, next) => {

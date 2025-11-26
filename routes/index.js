@@ -151,37 +151,48 @@ router.post(
     const normalizeNif = (nif) => (nif ? nif.trim().toUpperCase() : "");
     const normalizedNif = normalizeNif(invoice.nif);
     const normalizedDestNif = normalizeNif(invoice.destNif || invoice.nif);
+    const registroAnterior =
+      invoice.encadenamiento?.registroAnterior || invoice.registroAnterior;
 
-    function generarHuellaDesdeFactura(factura) {
-      const now = new Date();
-      const timestamp = `${now.getFullYear()}-${String(
-        now.getMonth() + 1
-      ).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}T${String(
-        now.getHours()
-      ).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}:${String(
-        now.getSeconds()
-      ).padStart(2, "0")}+01:00`;
+    const ensureDateDDMMYYYY = (value, fieldName) => {
+      if (!value || !/^\d{2}-\d{2}-\d{4}$/.test(value.trim())) {
+        throw new AppError(
+          `${fieldName} must be in DD-MM-YYYY format`,
+          400,
+          null,
+          "ValidationError"
+        );
+      }
+      return value.trim();
+    };
+
+    const formatTimestampWithOffset = (date) => {
+      const d = date || new Date();
+      const pad = (num) => String(num).padStart(2, "0");
+      const offsetMinutes = -d.getTimezoneOffset();
+      const sign = offsetMinutes >= 0 ? "+" : "-";
+      const abs = Math.abs(offsetMinutes);
+      const offsetHours = pad(Math.floor(abs / 60));
+      const offsetMins = pad(abs % 60);
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
+        d.getDate()
+      )}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(
+        d.getSeconds()
+      )}${sign}${offsetHours}:${offsetMins}`;
+    };
+
+    function generarHuellaDesdeFactura(factura, registroAnteriorHuella) {
+      const timestamp = formatTimestampWithOffset(new Date());
       const valores = [
         `IDEmisorFactura=${factura.nif ? factura.nif.trim().toUpperCase() : ""}`,
         `NumSerieFactura=${factura.numSerie ? factura.numSerie.trim() : ""}`,
-        `FechaExpedicionFactura=${
-          factura.fecha
-            ? new Date(factura.fecha)
-                .toLocaleDateString("es-ES", {
-                  year: "numeric",
-                  month: "2-digit",
-                  day: "2-digit",
-                })
-                .split("/")
-                .join("-")
-            : ""
-        }`,
+        `FechaExpedicionFactura=${factura.fecha ? factura.fecha.trim() : ""}`,
         `TipoFactura=${
           factura.tipoFactura ? factura.tipoFactura.trim() : "F1"
         }`,
         `CuotaTotal=${Number(factura.cuotaTotal).toFixed(2)}`,
         `ImporteTotal=${Number(factura.total).toFixed(2)}`,
-        `Huella=${factura.huellaAnterior ? factura.huellaAnterior.trim() : ""}`,
+        `Huella=${registroAnteriorHuella || ""}`,
         `FechaHoraHusoGenRegistro=${timestamp}`,
       ];
       const datosCanonicos = valores.join("&");
@@ -207,13 +218,55 @@ router.post(
     }
 
     try {
-      const { huella, tipo, fechaHora } = generarHuellaDesdeFactura(invoice);
-      const fechaExpedicion = invoice.fecha
-        ? invoice.fecha.trim().slice(0, 10)
-        : "";
+      if (!registroAnterior) {
+        throw new AppError(
+          "Encadenamiento.registroAnterior is required to comply with Veri*Factu chaining",
+          400,
+          null,
+          "ValidationError"
+        );
+      }
+
+      const fechaExpedicion = ensureDateDDMMYYYY(
+        invoice.fecha,
+        "FechaExpedicionFactura"
+      );
+
+      const fechaRegistroAnterior = ensureDateDDMMYYYY(
+        registroAnterior.fechaExpedicionFactura,
+        "Encadenamiento.RegistroAnterior.FechaExpedicionFactura"
+      );
+
+      const {
+        huella,
+        tipo,
+        fechaHora: fechaHoraGeneracion,
+      } = generarHuellaDesdeFactura(invoice, registroAnterior.huella);
 
       console.log("🧾 TipoHuella enviado:", tipo);
       console.log("🧾 Huella enviada:", huella, "Longitud:", huella.length);
+
+      // Normaliza importes/valores numéricos de detalle a string con punto decimal.
+      const sanitizedDetalles = (invoice.detalles || []).map((d, idx) => {
+        const base = Number(d.base);
+        const cuota = Number(d.cuota);
+        const tipo = Number(d.tipo);
+        if ([base, cuota, tipo].some((n) => Number.isNaN(n))) {
+          throw new AppError(
+            `Detalle ${idx + 1} tiene importes no numéricos`,
+            400,
+            null,
+            "ValidationError"
+          );
+        }
+        return {
+          clave: (d.clave || "").trim(),
+          calif: (d.calif || "").trim(),
+          tipo: tipo.toFixed(2).replace(/\.00$/, ".0"),
+          base: base.toFixed(2).replace(/\.00$/, ".0"),
+          cuota: cuota.toFixed(2).replace(/\.00$/, ".0"),
+        };
+      });
 
       const xmlRequest = `
     <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
@@ -249,43 +302,87 @@ router.post(
                     (invoice.destNombre || invoice.nombre).trim()
                   )}</sum1:NombreRazon>
                   <sum1:NIF>${escapeXml(normalizedDestNif)}</sum1:NIF>
-                </sum1:IDDestinatario>
-              </sum1:Destinatarios>
-              <sum1:Desglose>
-                ${invoice.detalles
-                  .map(
-                    (d) => `
-                  <sum1:DetalleDesglose>
-                    <sum1:ClaveRegimen>${d.clave}</sum1:ClaveRegimen>
-                    <sum1:CalificacionOperacion>${d.calif}</sum1:CalificacionOperacion>
-                    <sum1:TipoImpositivo>${d.tipo}</sum1:TipoImpositivo>
-                    <sum1:BaseImponibleOimporteNoSujeto>${d.base}</sum1:BaseImponibleOimporteNoSujeto>
-                    <sum1:CuotaRepercutida>${d.cuota}</sum1:CuotaRepercutida>
-                  </sum1:DetalleDesglose>`
-                  )
-                  .join("")}
-              </sum1:Desglose>
-              <sum1:CuotaTotal>${invoice.cuotaTotal}</sum1:CuotaTotal>
-              <sum1:ImporteTotal>${invoice.total}</sum1:ImporteTotal>
-              <sum1:Encadenamiento>
-                <sum1:PrimerRegistro>${
-                  invoice.primerRegistro || "S"
-                }</sum1:PrimerRegistro>
+              </sum1:IDDestinatario>
+            </sum1:Destinatarios>
+            <sum1:Desglose>
+              ${sanitizedDetalles
+                .map(
+                  (d) => `
+              <sum1:DetalleDesglose>
+                <sum1:ClaveRegimen>${d.clave}</sum1:ClaveRegimen>
+                <sum1:CalificacionOperacion>${d.calif}</sum1:CalificacionOperacion>
+                <sum1:TipoImpositivo>${d.tipo}</sum1:TipoImpositivo>
+                <sum1:BaseImponibleOimporteNoSujeto>${d.base}</sum1:BaseImponibleOimporteNoSujeto>
+                <sum1:CuotaRepercutida>${d.cuota}</sum1:CuotaRepercutida>
+              </sum1:DetalleDesglose>`
+                )
+                .join("")}
+            </sum1:Desglose>
+            <sum1:CuotaTotal>${Number(invoice.cuotaTotal)
+              .toFixed(2)
+              .replace(/\.00$/, ".0")}</sum1:CuotaTotal>
+            <sum1:ImporteTotal>${Number(invoice.total)
+              .toFixed(2)
+              .replace(/\.00$/, ".0")}</sum1:ImporteTotal>
+            <sum1:Encadenamiento>
+              <sum1:RegistroAnterior>
+                <sum1:IDEmisorFactura>${escapeXml(
+                  registroAnterior.idEmisorFactura ||
+                    registroAnterior.IDEmisorFactura ||
+                      normalizedNif
+                  )}</sum1:IDEmisorFactura>
+                  <sum1:NumSerieFactura>${escapeXml(
+                    registroAnterior.numSerieFactura ||
+                      registroAnterior.NumSerieFactura ||
+                      ""
+                  )}</sum1:NumSerieFactura>
+                  <sum1:FechaExpedicionFactura>${escapeXml(
+                    fechaRegistroAnterior
+                  )}</sum1:FechaExpedicionFactura>
+                  <sum1:Huella>${escapeXml(
+                    registroAnterior.huella || ""
+                  )}</sum1:Huella>
+                </sum1:RegistroAnterior>
               </sum1:Encadenamiento>
               <sum1:SistemaInformatico>
-                <sum1:NombreRazon>${escapeXml(invoice.nombre.trim())}</sum1:NombreRazon>
-                <sum1:NIF>${escapeXml(normalizedNif)}</sum1:NIF>
+                <sum1:NombreRazon>${escapeXml(
+                  (invoice.sistemaInformatico?.nombreRazon ||
+                    invoice.nombre)
+                    .trim()
+                )}</sum1:NombreRazon>
+                <sum1:NIF>${escapeXml(
+                  normalizeNif(invoice.sistemaInformatico?.nif) || normalizedNif
+                )}</sum1:NIF>
                 <sum1:NombreSistemaInformatico>${escapeXml(
-                  (invoice.nombreSistema || "MiSistemaVerifactu").trim()
+                  (
+                    invoice.sistemaInformatico?.nombreSistemaInformatico ||
+                    invoice.nombreSistema ||
+                    "MiSistemaVerifactu"
+                  ).trim()
                 )}</sum1:NombreSistemaInformatico>
-                <sum1:IdSistemaInformatico>01</sum1:IdSistemaInformatico>
-                <sum1:Version>1</sum1:Version>
-                <sum1:NumeroInstalacion>${Date.now()}</sum1:NumeroInstalacion>
-                <sum1:TipoUsoPosibleSoloVerifactu>N</sum1:TipoUsoPosibleSoloVerifactu>
-                <sum1:TipoUsoPosibleMultiOT>N</sum1:TipoUsoPosibleMultiOT>
-                <sum1:IndicadorMultiplesOT>N</sum1:IndicadorMultiplesOT>
+                <sum1:IdSistemaInformatico>${escapeXml(
+                  invoice.sistemaInformatico?.idSistemaInformatico || "01"
+                )}</sum1:IdSistemaInformatico>
+                <sum1:Version>${escapeXml(
+                  invoice.sistemaInformatico?.version || "1.0.3"
+                )}</sum1:Version>
+                <sum1:NumeroInstalacion>${escapeXml(
+                  invoice.sistemaInformatico?.numeroInstalacion ||
+                    invoice.numeroInstalacion ||
+                    "1"
+                )}</sum1:NumeroInstalacion>
+                <sum1:TipoUsoPosibleSoloVerifactu>${escapeXml(
+                  invoice.sistemaInformatico?.tipoUsoPosibleSoloVerifactu ||
+                    "N"
+                )}</sum1:TipoUsoPosibleSoloVerifactu>
+                <sum1:TipoUsoPosibleMultiOT>${escapeXml(
+                  invoice.sistemaInformatico?.tipoUsoPosibleMultiOT || "N"
+                )}</sum1:TipoUsoPosibleMultiOT>
+                <sum1:IndicadorMultiplesOT>${escapeXml(
+                  invoice.sistemaInformatico?.indicadorMultiplesOT || "N"
+                )}</sum1:IndicadorMultiplesOT>
               </sum1:SistemaInformatico>
-              <sum1:FechaHoraHusoGenRegistro>${fechaHora}</sum1:FechaHoraHusoGenRegistro>
+              <sum1:FechaHoraHusoGenRegistro>${fechaHoraGeneracion}</sum1:FechaHoraHusoGenRegistro>
               <sum1:TipoHuella>01</sum1:TipoHuella>
               <sum1:Huella>${huella}</sum1:Huella>
             </sum1:RegistroAlta>
@@ -301,11 +398,21 @@ router.post(
         xmlRequest,
         {
           headers: {
-            "Content-Type": "text/xml",
+            "Content-Type": "text/xml; charset=utf-8",
           },
           httpsAgent: httpsAgent,
+          timeout: 30000,
         }
       );
+
+      if (!response.data || typeof response.data !== "string") {
+        throw new AppError(
+          "AEAT response is empty or not XML",
+          502,
+          response.data,
+          "AEATServiceError"
+        );
+      }
 
       const parsed = await parser.parseStringPromise(response.data);
       res.json({ success: true, aeatResponse: parsed });
