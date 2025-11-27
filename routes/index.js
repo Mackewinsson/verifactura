@@ -10,6 +10,7 @@ const { log } = require("console");
 const {
   validateNIF,
   validateInvoice,
+  validateAnnulment,
   validateRequest,
 } = require("../middleware/validation");
 const { AppError } = require("../middleware/errorHandler");
@@ -392,6 +393,237 @@ router.post(
     </soapenv:Envelope>
     `;
       console.log("📦 XML Request:", xmlRequest);
+
+      const response = await axios.post(
+        "https://prewww1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP",
+        xmlRequest,
+        {
+          headers: {
+            "Content-Type": "text/xml; charset=utf-8",
+          },
+          httpsAgent: httpsAgent,
+          timeout: 30000,
+        }
+      );
+
+      if (!response.data || typeof response.data !== "string") {
+        throw new AppError(
+          "AEAT response is empty or not XML",
+          502,
+          response.data,
+          "AEATServiceError"
+        );
+      }
+
+      const parsed = await parser.parseStringPromise(response.data);
+      res.json({ success: true, aeatResponse: parsed });
+    } catch (error) {
+      if (error instanceof AppError) {
+        next(error);
+      } else if (
+        error.message.includes("XML") ||
+        error.message.includes("parse")
+      ) {
+        next(
+          new AppError(
+            "Failed to parse AEAT response",
+            500,
+            error.message,
+            "XMLParseError"
+          )
+        );
+      } else {
+        next(
+          new AppError(
+            "AEAT Service Error",
+            502,
+            (error.response && error.response.data) || error.message,
+            "AEATServiceError"
+          )
+        );
+      }
+    }
+  }
+);
+
+router.post(
+  "/cancel-invoice",
+  validateAnnulment,
+  validateRequest,
+  async (req, res, next) => {
+    const {
+      nif,
+      nombre,
+      facturaAnulada,
+      encadenamiento,
+      sistemaInformatico = {},
+      huella,
+      tipoHuella = "01",
+      rechazoPrevio,
+      sinRegistroPrevio,
+      idVersion = "1.0",
+    } = req.body;
+
+    const escapeXml = (str) => {
+      if (str === undefined || str === null) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&apos;");
+    };
+    const normalizeNif = (value) => (value ? value.trim().toUpperCase() : "");
+    const ensureDateDDMMYYYY = (value, fieldName) => {
+      if (!value || !/^\d{2}-\d{2}-\d{4}$/.test(value.trim())) {
+        throw new AppError(
+          `${fieldName} must be in DD-MM-YYYY format`,
+          400,
+          null,
+          "ValidationError"
+        );
+      }
+      return value.trim();
+    };
+    const formatTimestampWithOffset = (date) => {
+      const d = date || new Date();
+      const pad = (num) => String(num).padStart(2, "0");
+      const offsetMinutes = -d.getTimezoneOffset();
+      const sign = offsetMinutes >= 0 ? "+" : "-";
+      const abs = Math.abs(offsetMinutes);
+      const offsetHours = pad(Math.floor(abs / 60));
+      const offsetMins = pad(abs % 60);
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
+        d.getDate()
+      )}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(
+        d.getSeconds()
+      )}${sign}${offsetHours}:${offsetMins}`;
+    };
+
+    try {
+      const normalizedNif = normalizeNif(nif);
+      const anulada = facturaAnulada || {};
+      const registroAnterior = encadenamiento?.registroAnterior || {};
+
+      const fechaAnulada = ensureDateDDMMYYYY(
+        anulada.fechaExpedicionFacturaAnulada,
+        "FacturaAnulada.FechaExpedicionFacturaAnulada"
+      );
+      const fechaRegistroAnterior = ensureDateDDMMYYYY(
+        registroAnterior.fechaExpedicionFactura,
+        "Encadenamiento.RegistroAnterior.FechaExpedicionFactura"
+      );
+
+      const timestamp = formatTimestampWithOffset(new Date());
+      const huellaNormalizada = huella.trim().toUpperCase();
+
+      const xmlRequest = `
+    <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+      xmlns:sum="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SuministroLR.xsd"
+      xmlns:sum1="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SuministroInformacion.xsd">
+      <soapenv:Header/>
+      <soapenv:Body>
+        <sum:RegFactuSistemaFacturacion>
+          <sum:Cabecera>
+            <sum1:ObligadoEmision>
+              <sum1:NombreRazon>${escapeXml(nombre)}</sum1:NombreRazon>
+              <sum1:NIF>${escapeXml(normalizedNif)}</sum1:NIF>
+            </sum1:ObligadoEmision>
+          </sum:Cabecera>
+          <sum:RegistroFactura>
+            <sum1:RegistroAnulacion>
+              <sum1:IDVersion>${escapeXml(idVersion)}</sum1:IDVersion>
+              <sum1:IDFactura>
+                <sum1:IDEmisorFacturaAnulada>${escapeXml(
+                  normalizeNif(anulada.idEmisorFacturaAnulada)
+                )}</sum1:IDEmisorFacturaAnulada>
+                <sum1:NumSerieFacturaAnulada>${escapeXml(
+                  anulada.numSerieFacturaAnulada
+                )}</sum1:NumSerieFacturaAnulada>
+                <sum1:FechaExpedicionFacturaAnulada>${escapeXml(
+                  fechaAnulada
+                )}</sum1:FechaExpedicionFacturaAnulada>
+              </sum1:IDFactura>
+              ${
+                rechazoPrevio
+                  ? `<sum1:RechazoPrevio>${escapeXml(
+                      rechazoPrevio
+                    )}</sum1:RechazoPrevio>`
+                  : ""
+              }
+              ${
+                sinRegistroPrevio
+                  ? `<sum1:SinRegistroPrevio>${escapeXml(
+                      sinRegistroPrevio
+                    )}</sum1:SinRegistroPrevio>`
+                  : ""
+              }
+              <sum1:Encadenamiento>
+                <sum1:RegistroAnterior>
+                  <sum1:IDEmisorFactura>${escapeXml(
+                    normalizeNif(
+                      registroAnterior.idEmisorFactura ||
+                        registroAnterior.IDEmisorFactura ||
+                        normalizedNif
+                    )
+                  )}</sum1:IDEmisorFactura>
+                  <sum1:NumSerieFactura>${escapeXml(
+                    registroAnterior.numSerieFactura ||
+                      registroAnterior.NumSerieFactura ||
+                      ""
+                  )}</sum1:NumSerieFactura>
+                  <sum1:FechaExpedicionFactura>${escapeXml(
+                    fechaRegistroAnterior
+                  )}</sum1:FechaExpedicionFactura>
+                  <sum1:Huella>${escapeXml(
+                    registroAnterior.huella || ""
+                  )}</sum1:Huella>
+                </sum1:RegistroAnterior>
+              </sum1:Encadenamiento>
+              <sum1:SistemaInformatico>
+                <sum1:NombreRazon>${escapeXml(
+                  (sistemaInformatico.nombreRazon || nombre).trim()
+                )}</sum1:NombreRazon>
+                <sum1:NIF>${escapeXml(
+                  normalizeNif(sistemaInformatico.nif) || normalizedNif
+                )}</sum1:NIF>
+                <sum1:NombreSistemaInformatico>${escapeXml(
+                  (
+                    sistemaInformatico.nombreSistemaInformatico ||
+                    sistemaInformatico.nombreSistema ||
+                    "MiSistemaVerifactu"
+                  ).trim()
+                )}</sum1:NombreSistemaInformatico>
+                <sum1:IdSistemaInformatico>${escapeXml(
+                  sistemaInformatico.idSistemaInformatico || "01"
+                )}</sum1:IdSistemaInformatico>
+                <sum1:Version>${escapeXml(
+                  sistemaInformatico.version || "1.0.3"
+                )}</sum1:Version>
+                <sum1:NumeroInstalacion>${escapeXml(
+                  sistemaInformatico.numeroInstalacion || "1"
+                )}</sum1:NumeroInstalacion>
+                <sum1:TipoUsoPosibleSoloVerifactu>${escapeXml(
+                  sistemaInformatico.tipoUsoPosibleSoloVerifactu || "N"
+                )}</sum1:TipoUsoPosibleSoloVerifactu>
+                <sum1:TipoUsoPosibleMultiOT>${escapeXml(
+                  sistemaInformatico.tipoUsoPosibleMultiOT || "N"
+                )}</sum1:TipoUsoPosibleMultiOT>
+                <sum1:IndicadorMultiplesOT>${escapeXml(
+                  sistemaInformatico.indicadorMultiplesOT || "N"
+                )}</sum1:IndicadorMultiplesOT>
+              </sum1:SistemaInformatico>
+              <sum1:FechaHoraHusoGenRegistro>${timestamp}</sum1:FechaHoraHusoGenRegistro>
+              <sum1:TipoHuella>${escapeXml(tipoHuella)}</sum1:TipoHuella>
+              <sum1:Huella>${escapeXml(huellaNormalizada)}</sum1:Huella>
+            </sum1:RegistroAnulacion>
+          </sum:RegistroFactura>
+        </sum:RegFactuSistemaFacturacion>
+      </soapenv:Body>
+    </soapenv:Envelope>
+    `;
+
+      console.log("📦 XML Request Anulación:", xmlRequest);
 
       const response = await axios.post(
         "https://prewww1.aeat.es/wlpl/TIKE-CONT/ws/SistemaFacturacion/VerifactuSOAP",

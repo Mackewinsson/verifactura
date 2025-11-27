@@ -114,6 +114,98 @@ const validateInvoice = [
     .withMessage("Encadenamiento.RegistroAnterior.huella must be provided"),
 ];
 
+const validateAnnulment = [
+  body("nif")
+    .not()
+    .isEmpty()
+    .withMessage("NIF is required")
+    .trim()
+    .matches(/^[0-9]{8}[A-Za-z]$|^[A-Za-z][0-9]{7}[A-Za-z]$|^[A-Za-z][0-9]{7,8}[0-9A-Za-z]?$/)
+    .withMessage("Invalid NIF format"),
+  body("nombre")
+    .not()
+    .isEmpty()
+    .withMessage("Nombre is required")
+    .trim()
+    .isLength({ min: 1, max: 120 })
+    .withMessage("Nombre must be between 1 and 120 characters"),
+  body("facturaAnulada.idEmisorFacturaAnulada")
+    .not()
+    .isEmpty()
+    .withMessage("facturaAnulada.idEmisorFacturaAnulada is required")
+    .trim()
+    .matches(/^[0-9]{8}[A-Za-z]$|^[A-Za-z][0-9]{7}[A-Za-z]$|^[A-Za-z][0-9]{7,8}[0-9A-Za-z]?$/)
+    .withMessage("Invalid facturaAnulada.idEmisorFacturaAnulada format"),
+  body("facturaAnulada.numSerieFacturaAnulada")
+    .not()
+    .isEmpty()
+    .withMessage("facturaAnulada.numSerieFacturaAnulada is required")
+    .trim()
+    .isLength({ min: 1, max: 60 })
+    .withMessage("facturaAnulada.numSerieFacturaAnulada must be between 1 and 60 characters"),
+  body("facturaAnulada.fechaExpedicionFacturaAnulada")
+    .not()
+    .isEmpty()
+    .withMessage("facturaAnulada.fechaExpedicionFacturaAnulada is required")
+    .matches(/^\d{2}-\d{2}-\d{4}$/)
+    .withMessage("facturaAnulada.fechaExpedicionFacturaAnulada must be in DD-MM-YYYY format"),
+  body("encadenamiento.registroAnterior.idEmisorFactura")
+    .not()
+    .isEmpty()
+    .withMessage("Encadenamiento.RegistroAnterior.idEmisorFactura is required")
+    .trim()
+    .matches(/^[0-9]{8}[A-Za-z]$|^[A-Za-z][0-9]{7}[A-Za-z]$|^[A-Za-z][0-9]{7,8}[0-9A-Za-z]?$/)
+    .withMessage("Invalid Encadenamiento.RegistroAnterior.idEmisorFactura format"),
+  body("encadenamiento.registroAnterior.numSerieFactura")
+    .not()
+    .isEmpty()
+    .withMessage("Encadenamiento.RegistroAnterior.numSerieFactura is required")
+    .trim()
+    .isLength({ min: 1, max: 60 })
+    .withMessage(
+      "Encadenamiento.RegistroAnterior.numSerieFactura must be between 1 and 60 characters"
+    ),
+  body("encadenamiento.registroAnterior.fechaExpedicionFactura")
+    .not()
+    .isEmpty()
+    .withMessage("Encadenamiento.RegistroAnterior.fechaExpedicionFactura is required")
+    .matches(/^\d{2}-\d{2}-\d{4}$/)
+    .withMessage("Encadenamiento.RegistroAnterior.fechaExpedicionFactura must be in DD-MM-YYYY format"),
+  body("encadenamiento.registroAnterior.huella")
+    .not()
+    .isEmpty()
+    .withMessage("Encadenamiento.RegistroAnterior.huella is required")
+    .trim()
+    .isLength({ min: 10 })
+    .withMessage("Encadenamiento.RegistroAnterior.huella must be provided"),
+  body("huella")
+    .not()
+    .isEmpty()
+    .withMessage("Huella is required")
+    .trim()
+    .isLength({ min: 64, max: 64 })
+    .withMessage("Huella must be 64 hex characters")
+    .matches(/^[A-Fa-f0-9]{64}$/)
+    .withMessage("Huella must be a SHA-256 hex string"),
+  body("tipoHuella")
+    .optional()
+    .isIn(["01"])
+    .withMessage("tipoHuella must be 01 for SHA-256"),
+  body("rechazoPrevio")
+    .optional()
+    .isIn(["S", "N"])
+    .withMessage("rechazoPrevio must be S or N"),
+  body("sinRegistroPrevio")
+    .optional()
+    .isIn(["S", "N"])
+    .withMessage("sinRegistroPrevio must be S or N"),
+  body("sistemaInformatico.nif")
+    .optional()
+    .trim()
+    .matches(/^[0-9]{8}[A-Za-z]$|^[A-Za-z][0-9]{7}[A-Za-z]$|^[A-Za-z][0-9]{7,8}[0-9A-Za-z]?$/)
+    .withMessage("Invalid sistemaInformatico.nif format"),
+];
+
 const validateRequest = (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -132,5 +224,6 @@ const validateRequest = (req, res, next) => {
 module.exports = {
   validateNIF,
   validateInvoice,
+  validateAnnulment,
   validateRequest,
 };

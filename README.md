@@ -252,6 +252,47 @@ Para reiniciar manualmente el servidor ejecutado por PM2 use `pm2 restart verifa
     }
   }
   ```
+
+### Endpoint: Anulación de Factura
+
+- **Método:** `POST`
+- **Ruta:** `/cancel-invoice`
+- **Cuerpo de la solicitud (JSON):**
+
+  ```json
+  {
+    "nif": "Z0706098A",
+    "nombre": "MACKEWINSSON PALENCIA",
+    "facturaAnulada": {
+      "idEmisorFacturaAnulada": "Z0706098A",
+      "numSerieFacturaAnulada": "PRUEBA-0002",
+      "fechaExpedicionFacturaAnulada": "18-04-2025"
+    },
+    "encadenamiento": {
+      "registroAnterior": {
+        "idEmisorFactura": "Z0706098A",
+        "numSerieFactura": "PRUEBA-0001",
+        "fechaExpedicionFactura": "17-04-2025",
+        "huella": "ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789"
+      }
+    },
+    "rechazoPrevio": "N",
+    "sinRegistroPrevio": "N",
+    "huella": "FEDCBA9876543210FEDCBA9876543210FEDCBA9876543210FEDCBA9876543210",
+    "tipoHuella": "01",
+    "sistemaInformatico": {
+      "nombreRazon": "MACKEWINSSON PALENCIA",
+      "nif": "Z0706098A",
+      "nombreSistemaInformatico": "MiSistemaVerifactu",
+      "idSistemaInformatico": "01",
+      "version": "1.0.3",
+      "numeroInstalacion": "1",
+      "tipoUsoPosibleSoloVerifactu": "N",
+      "tipoUsoPosibleMultiOT": "N",
+      "indicadorMultiplesOT": "N"
+    }
+  }
+  ```
 - **Error en el envío (400 Bad Request):**
   ```json
   {
