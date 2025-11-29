@@ -296,7 +296,13 @@ Para reiniciar manualmente el servidor ejecutado por PM2 use `pm2 restart verifa
 - **Error en el envío (400 Bad Request):**
   ```json
   {
-    "error": "Missing required invoice fields"
+    "error": "Validation Error",
+    "details": [
+      {
+        "field": "facturaAnulada.idEmisorFacturaAnulada",
+        "message": "facturaAnulada.idEmisorFacturaAnulada is required"
+      }
+    ]
   }
   ```
 - **Error en el servidor (500 Internal Server Error):**

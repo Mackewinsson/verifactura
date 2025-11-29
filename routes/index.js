@@ -517,6 +517,11 @@ router.post(
       const timestamp = formatTimestampWithOffset(new Date());
       const huellaNormalizada = huella.trim().toUpperCase();
 
+      const rechazoPrevioFlag = rechazoPrevio || "N";
+      const sinRegistroPrevioFlag = sinRegistroPrevio || "N";
+
+      // La especificación permite no informar los flags de Rechazo/SinRegistro,
+      // pero se envían como "N" por defecto para cumplir con la lista de valores.
       const xmlRequest = `
     <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
       xmlns:sum="https://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/tike/cont/ws/SuministroLR.xsd"
@@ -544,20 +549,12 @@ router.post(
                   fechaAnulada
                 )}</sum1:FechaExpedicionFacturaAnulada>
               </sum1:IDFactura>
-              ${
-                rechazoPrevio
-                  ? `<sum1:RechazoPrevio>${escapeXml(
-                      rechazoPrevio
-                    )}</sum1:RechazoPrevio>`
-                  : ""
-              }
-              ${
-                sinRegistroPrevio
-                  ? `<sum1:SinRegistroPrevio>${escapeXml(
-                      sinRegistroPrevio
-                    )}</sum1:SinRegistroPrevio>`
-                  : ""
-              }
+              <sum1:RechazoPrevio>${escapeXml(
+                rechazoPrevioFlag
+              )}</sum1:RechazoPrevio>
+              <sum1:SinRegistroPrevio>${escapeXml(
+                sinRegistroPrevioFlag
+              )}</sum1:SinRegistroPrevio>
               <sum1:Encadenamiento>
                 <sum1:RegistroAnterior>
                   <sum1:IDEmisorFactura>${escapeXml(
